@@ -1,4 +1,4 @@
-CÓDIGO PARA app.py
+CÓDIGO LIMPIO PARA app.py
 import streamlit as st
 import yfinance as yf
 import pandas as pd
@@ -11,7 +11,7 @@ st.set_page_config(page_title="V10 Elite Terminal", layout="wide")
 
 --- UNIVERSO DE ACTIVOS ---
 universo = {
-"Tecnología": ["MSFT", "CRM", "ADBE", "ORCL", "SAP"],
+"Tecnologia": ["MSFT", "CRM", "ADBE", "ORCL", "SAP"],
 "Chips": ["AMD", "TSM", "NVDA", "ASML", "AVGO"],
 "Salud": ["NVO", "LLY", "UNH", "PFE"],
 "Consumo": ["AMZN", "BABA", "MELI", "NKE"],
@@ -34,7 +34,7 @@ return pd.DataFrame(datos)
 
 --- INTERFAZ PRINCIPAL ---
 st.title("🛰️ Terminal V10: Elite")
-tab1, tab2, tab3 = st.tabs(["🎯 RADAR", "🔥 MAPA", "🔍 AUDITORÍA 360°"])
+tab1, tab2, tab3 = st.tabs(["🎯 RADAR", "🔥 MAPA", "🔍 AUDITORIA"])
 
 --- TAB 1: RADAR ---
 with tab1:
@@ -53,15 +53,15 @@ color='Margen %', color_continuous_scale='RdYlGn',
 title="Mapa de Calor: Oportunidades")
 st.plotly_chart(fig_mapa, use_container_width=True)
 
---- TAB 3: AUDITORÍA 360° ---
+--- TAB 3: AUDITORIA ---
 with tab3:
-tk = st.text_input("Introduce Ticker para Auditoría:", "MSFT").upper()
+tk = st.text_input("Introduce Ticker para Auditoria:", "MSFT").upper()
 if tk:
-with st.spinner('Escaneando activo...'):
+with st.spinner('Analizando...'):
 acc = yf.Ticker(tk)
 h = acc.history(period="1y")
 info = acc.info
 
-========================================================== MÉTRICA            VALOR            ESTADO
-Precio Actual            ${p_act:.2f}        Cotizando Precio Justo             ${p_justo:.2f}        Referencia Margen Seg.              {margen:.1f}%        {est_margen} RSI (14d)                {rsi_v:.1f}         {est_rsi} SMA 200                  ${sma_v:.2f}        {est_tend} EBITDA                   {ebitda:,}        Sólido
+========================================================== METRICA            VALOR            ESTADO
+Precio Actual            ${p_act:.2f}        Cotizando Precio Justo             ${p_justo:.2f}        Referencia Margen Seg.              {margen:.1f}%        {est_margen} RSI (14d)                {rsi_v:.1f}         {est_rsi} SMA 200                  ${sma_v:.2f}        {est_tend} EBITDA                   {ebitda:,}        Solido
 ESTRATEGIA V10: {estrategia} NIVELES DE COMPRA:  1: ${p_act0.96:.2f} | 2: ${p_act0.92:.2f} | 3: ${p_act*0.88:.2f}
