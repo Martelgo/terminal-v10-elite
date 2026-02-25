@@ -1,115 +1,105 @@
 import streamlit as st
 import yfinance as yf
 import pandas as pd
-import plotly.express as px
+import pandas_ta as ta
 import plotly.graph_objects as go
 
 # Configuración visual
 st.set_page_config(page_title="V10 Elite Terminal", layout="wide")
-st.title("🛰️ Terminal V10: Inteligencia de Mercados")
+st.title("🛰️ Terminal V10 Pro")
 
-# --- UNIVERSO DE VIGILANCIA (EUA y México) ---
+# --- UNIVERSO DE VIGILANCIA ---
 universo = {
     "Tecnología EUA": ["MSFT", "AAPL", "NVDA", "GOOGL"],
     "México (BMV)": ["WALMEX.MX", "AMX.MX", "GFNORTEO.MX", "FEMSAUBD.MX", "GMEXICOB.MX"],
-    "Consumo EUA": ["AMZN", "TSLA", "MELI", "NKE"],
     "Chips": ["AMD", "TSM", "ASML", "AVGO"]
 }
 
-# --- BARRA LATERAL ---
-st.sidebar.header("Configuración")
-mercado_default = st.sidebar.selectbox("Mercado Principal", ["EUA", "México"])
-margen_min = st.sidebar.slider("Margen Mínimo %", 0, 100, 15)
-
-@st.cache_data(ttl=3600)
-def cargar_datos():
-    lista_final = []
+@st.cache_data(ttl=600)
+def cargar_radar():
+    datos = []
     for sector, tickers in universo.items():
         for t in tickers:
             try:
-                acc = yf.Ticker(t)
-                info = acc.info
-                p_act = info.get('currentPrice') or info.get('regularMarketPrice')
-                # Cálculo de Precio Justo (Target o Estimación V10)
-                target = info.get('targetMeanPrice') or (info.get('forwardPE', 15) * info.get('forwardEps', 1))
-                
-                if p_act and target and target > 0:
-                    margen = ((target - p_act) / p_act) * 100
-                    lista_final.append({
-                        "Ticker": t, 
-                        "Sector": sector, 
-                        "Precio": round(p_act, 2), 
-                        "Margen %": round(margen, 2),
-                        "Moneda": info.get('currency', 'USD')
-                    })
+                s = yf.Ticker(t)
+                p = s.info.get('currentPrice') or s.info.get('regularMarketPrice', 0)
+                tj = s.info.get('targetMeanPrice') or (s.info.get('forwardPE', 15) * s.info.get('forwardEps', 1))
+                m = ((tj - p) / tj) * 100 if tj else 0
+                datos.append({"Ticker": t, "Sector": sector, "Precio": round(p, 2), "Margen %": round(m, 2)})
             except: continue
-    return pd.DataFrame(lista_final)
+    return pd.DataFrame(datos)
 
-df_global = cargar_datos()
+tab1, tab2 = st.tabs(["🎯 RADAR DE OPORTUNIDADES", "🔍 AUDITORIA V10"])
 
-# --- NAVEGACIÓN ---
-tab1, tab2 = st.tabs(["🎯 RADAR DE OPORTUNIDADES", "🔍 TERMINAL V10 (DETALLE)"])
-
-# TAB 1: RADAR
+# --- TAB 1: RADAR ---
 with tab1:
-    st.subheader("Radar de Margen de Seguridad")
-    if not df_global.empty:
-        # Filtro de margen
-        df_radar = df_global[df_global['Margen %'] >= margen_min].sort_values(by="Margen %", ascending=False)
-        
+    df_radar = cargar_radar()
+    if not df_radar.empty:
         for sector in universo.keys():
             st.write(f"### {sector}")
-            sector_df = df_radar[df_radar['Sector'] == sector]
-            if not sector_df.empty:
-                st.dataframe(sector_df, use_container_width=True)
-            else:
-                st.info(f"No hay acciones en {sector} con margen > {margen_min}%")
-    else:
-        st.error("No se pudieron cargar datos. Revisa la conexión.")
+            st.dataframe(df_radar[df_radar['Sector'] == sector], use_container_width=True)
 
-# TAB 2: TERMINAL V10 DETALLE
+# --- TAB 2: AUDITORIA (CON CONSOLA VISUAL) ---
 with tab2:
     st.subheader("Análisis 360 de Activo")
-    col_input1, col_input2 = st.columns([1, 2])
-    
-    with col_input1:
-        tipo_mercado = st.radio("Tipo de Ticker:", ["EUA (Normal)", "México (.MX)"])
-    with col_input2:
-        tk_input = st.text_input("Introduce Ticker (ej: MSFT o WALMEX.MX):", "MSFT").upper()
+    c_i1, c_i2 = st.columns([1, 2])
+    with c_i1:
+        mkt = st.radio("Mercado:", ["EUA", "México (.MX)"])
+    with c_i2:
+        tk_in = st.text_input("Ticker:", "MSFT").upper()
 
-    if tk_input:
-        # Validación automática de sufijo para México
-        ticker_final = tk_input
-        if tipo_mercado == "México (.MX)" and not ticker_final.endswith(".MX"):
-            ticker_final = f"{ticker_final}.MX"
-            
-        with st.spinner(f'Analizando {ticker_final}...'):
-            acc_v10 = yf.Ticker(ticker_final)
-            h = acc_v10.history(period="1y")
+    ticker_final = tk_in if mkt == "EUA" else (f"{tk_in}.MX" if ".MX" not in tk_in else tk_in)
+
+    if ticker_final:
+        with st.spinner('Procesando datos...'):
+            acc = yf.Ticker(ticker_final)
+            h = acc.history(period="1y")
+            info = acc.info
             
             if not h.empty:
-                p_actual = h['Close'].iloc[-1]
-                moneda = acc_v10.info.get('currency', 'USD')
+                # Cálculos Técnicos
+                h['RSI'] = ta.rsi(h['Close'], length=14)
+                h['SMA200'] = ta.sma(h['Close'], length=200)
                 
-                # Niveles V10
-                n1, n2, n3 = p_actual * 0.95, p_actual * 0.90, p_actual * 0.85
+                p_act = h['Close'].iloc[-1]
+                rsi_v = h['RSI'].iloc[-1]
+                sma_v = h['SMA200'].iloc[-1]
+                moneda = info.get('currency', 'USD')
+                ebitda = info.get('ebitda', 0)
                 
-                # Métricas Estilo Terminal
-                c1, c2, c3 = st.columns(3)
-                c1.metric("Precio Actual", f"{p_actual:.2f} {moneda}")
-                c2.metric("Nivel 1 (Compra)", f"{n1:.2f}")
-                c3.metric("Nivel 3 (Pánico)", f"{n3:.2f}")
+                # Precio Justo y Margen
+                p_justo = info.get('targetMeanPrice') or (info.get('forwardPE', 15) * info.get('forwardEps', 1))
+                margen = ((p_justo - p_act) / p_justo) * 100 if p_justo else 0
                 
+                # Lógica de Estados
+                est_m = "DESCUENTO" if margen > 15 else "CARO"
+                est_r = "SOBREVENTA" if rsi_v < 35 else ("SOBRECOMPRA" if rsi_v > 65 else "NEUTRAL")
+                est_t = "ALCISTA" if p_act > sma_v else "BAJISTA"
+                estrategia = "REBOTE" if rsi_v < 40 else "CONTINUACION"
+
+                # --- LA CONSOLA QUE QUERÍAS ---
+                st.markdown(f"### 🏢 {info.get('longName', ticker_final)}")
+                st.markdown(f"**📡 ESTRATEGIA: {estrategia} (Acción en {est_m.lower()})**")
+                
+                # Usamos st.code para mantener el formato de terminal alineado
+                reporte = f"""
+=================================================================
+                  MÉTRICA           VALOR       ESTADO
+-----------------------------------------------------------------
+            Precio Actual         ${p_act:.2f}    Cotizando
+Precio Justo de la Acción         ${p_justo:.2f}   Referencia
+              Margen Seg.           {margen:.1f}%       {"✅" if est_m=="DESCUENTO" else "❌"} {est_m}
+                RSI (14d)            {rsi_v:.1f}  {"📉" if rsi_v<35 else "⚖️"} {est_r}
+                  SMA 200         ${sma_v:.2f}   {"🚀" if est_t=="ALCISTA" else "⚠️"} {est_t}
+                   EBITDA          {ebitda:,}       Sólido
+-----------------------------------------------------------------
+📍 NIVELES DE COMPRA:  1: ${p_act*0.96:.2f} | 2: ${p_act*0.92:.2f} | 3: ${p_act*0.88:.2f}
+=================================================================
+"""
+                st.code(reporte, language="text")
+
                 # Gráfico
-                fig_chart = go.Figure(data=[go.Candlestick(
-                    x=h.index, open=h['Open'], high=h['High'], low=h['Low'], close=h['Close']
-                )])
-                fig_chart.update_layout(
-                    title=f"Histórico 1 Año: {ticker_final}",
-                    template="plotly_dark",
-                    height=450,
-                    xaxis_rangeslider_visible=False
-                )
-                st.plotly_chart(fig_chart, use_container_width=True)
-            else:
-                st.error("No se encontró información para ese Ticker. Verifica que sea correcto.")
+                fig = go.Figure(data=[go.Candlestick(x=h.index, open=h['Open'], high=h['High'], low=h['Low'], close=h['Close'])])
+                fig.add_trace(go.Scatter(x=h.index, y=h['SMA200'], line=dict(color='orange', width=2), name="SMA 200"))
+                fig.update_layout(template="plotly_dark", height=400, xaxis_rangeslider_visible=False)
+                st.plotly_chart(fig, use_container_width=True)
