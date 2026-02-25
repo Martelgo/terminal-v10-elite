@@ -1,68 +1,55 @@
 import streamlit as st
 import yfinance as yf
 import pandas as pd
-import numpy as np
+import pandas_ta as ta
 import plotly.graph_objects as go
+import plotly.express as px
 
-st.set_page_config(page_title="Terminal Elite V10", layout="wide")
+st.set_page_config(page_title="V10 Elite", layout="wide")
 
-# --- FUNCIONES DE CÁLCULO V10 ---
-def calcular_rsi(data, window=14):
-    delta = data.diff()
-    gain = (delta.where(delta > 0, 0)).rolling(window=window).mean()
-    loss = (-delta.where(delta < 0, 0)).rolling(window=window).mean()
-    rs = gain / loss
-    return 100 - (100 / (1 + rs))
+universo = {
+"Tecnologia": ["MSFT", "CRM", "ADBE", "ORCL", "SAP"],
+"Chips": ["AMD", "TSM", "NVDA", "ASML", "AVGO"],
+"Salud": ["NVO", "LLY", "UNH", "PFE"],
+"Consumo": ["AMZN", "BABA", "MELI", "NKE"]
+}
 
-def auditoria_v10(ticker):
-    stock = yf.Ticker(ticker)
-    info = stock.info
-    hist = stock.history(period="1y")
-    
-    if hist.empty: return None
+@st.cache_data(ttl=600)
+def cargar_radar():
+datos = []
+for sector, tickers in universo.items():
+for t in tickers:
+try:
+s = yf.Ticker(t)
+p = s.info.get('currentPrice') or s.info.get('regularMarketPrice', 0)
+tj = s.info.get('targetMeanPrice') or (s.info.get('forwardPE', 15) * s.info.get('forwardEps', 1))
+m = ((tj - p) / tj) * 100 if tj else 0
+datos.append({"Ticker": t, "Sector": sector, "Precio": p, "Margen": m})
+except: continue
+return pd.DataFrame(datos)
 
-    # 1. Datos Actuales
-    precio_act = hist['Close'].iloc[-1]
-    
-    # 2. Fundamentales (Precio Justo)
-    eps = info.get('forwardEps', 1)
-    pe_ratio = info.get('forwardPE', 15)
-    precio_justo = eps * pe_ratio
-    margen_seguridad = ((precio_justo - precio_act) / precio_justo) * 100
-    ebitda = info.get('ebitda', 'N/A')
+st.title("V10 Terminal")
+tab1, tab2, tab3 = st.tabs(["RADAR", "MAPA", "AUDITORIA"])
 
-    # 3. Indicadores Técnicos
-    sma_50 = hist['Close'].rolling(window=50).mean().iloc[-1]
-    sma_200 = hist['Close'].rolling(window=200).mean().iloc[-1]
-    rsi = calcular_rsi(hist['Close']).iloc[-1]
+with tab1:
+df = cargar_radar()
+if not df.empty:
+for s in universo.keys():
+st.write(f"### {s}")
+st.dataframe(df[df['Sector'] == s])
 
-    # 4. Estado de Valuación
-    estado = "CARO 🔴" if precio_act > precio_justo else "BARATO 🟢"
-    sobreventa = "SÍ ⚠️" if rsi < 30 else "NO"
+with tab2:
+if not df.empty:
+fig = px.treemap(df, path=['Sector', 'Ticker'], values='Precio', color='Margen', color_continuous_scale='RdYlGn')
+st.plotly_chart(fig, use_container_width=True)
 
-    # 5. Estrategia V10
-    if precio_act > sma_50 and sma_50 > sma_200:
-        estrategia = "CONTINUACIÓN ALCISTA 📈"
-    elif precio_act < sma_50 and rsi < 35:
-        estrategia = "REBOTE TÉCNICO 📉"
-    else:
-        estrategia = "NEUTRAL / ESPERA ⚖️"
-
-    return {
-        "Precio": precio_act, "Precio Justo": precio_justo, "Margen": margen_seguridad,
-        "EBITDA": ebitda, "RSI": rsi, "SMA50": sma_50, "SMA200": sma_200,
-        "Estado": estado, "Sobreventa": sobreventa, "Estrategia": estrategia, "Hist": hist
-    }
-
-# --- INTERFAZ APP ---
-st.title("🛰️ Terminal V10: Auditoría Completa")
-
-ticker_input = st.text_input("Introduce Ticker (Ej: NVO, ORCL, MSFT):", "ORCL").upper()
-
-if ticker_input:
-    res = auditoria_v10(ticker_input)
-    
-    if res:
-        # Fila 1: Métricas Críticas
-        col1, col2, col3, col4 = st.columns(4)
-        col1.metric("PRECIO ACTUAL", f"${res['Precio']:.2
+with tab3:
+tk = st.text_input("Ticker:", "MSFT").upper()
+if tk:
+acc = yf.Ticker(tk)
+h = acc.history(period="1y")
+if not h.empty:
+h['RSI'] = ta.rsi(h['Close'], length=14)
+h['SMA200'] = ta.sma(h['Close'], length=200)
+p_now = h['Close'].iloc[-1]
+rsi_now = h['RSI'].iloc[-1]
