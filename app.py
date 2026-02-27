@@ -51,19 +51,20 @@ with tab2:
     ticker_final = tk_in if mkt == "EUA" else (f"{tk_in}.MX" if ".MX" not in tk_in else tk_in)
 
     if ticker_final:
-        acc = yf.Ticker(ticker_final)
-        h = acc.history(period="1y")
-        info = acc.info
-        if not h.empty:
-            h['RSI'] = ta.rsi(h['Close'], length=14)
-            h['SMA200'] = ta.sma(h['Close'], length=200)
-            p_act, rsi_v, sma_v = h['Close'].iloc[-1], h['RSI'].iloc[-1], h['SMA200'].iloc[-1]
-            p_justo = info.get('targetMeanPrice') or (info.get('forwardPE', 15) * info.get('forwardEps', 1))
-            margen = ((p_justo - p_act) / p_act) * 100
-            ebitda = info.get('ebitda', 0) or 0
-            est_m, est_r, est_t = "DESCUENTO" if margen > 15 else "CARO", "SOBREVENTA" if rsi_v < 35 else ("SOBRECOMPRA" if rsi_v > 65 else "NEUTRAL"), "ALCISTA" if p_act > sma_v else "BAJISTA"
-            
-            st.code(f"""
+        with st.spinner('Procesando...'):
+            acc = yf.Ticker(ticker_final)
+            h = acc.history(period="1y")
+            info = acc.info
+            if not h.empty:
+                h['RSI'] = ta.rsi(h['Close'], length=14)
+                h['SMA200'] = ta.sma(h['Close'], length=200)
+                p_act, rsi_v, sma_v = h['Close'].iloc[-1], h['RSI'].iloc[-1], h['SMA200'].iloc[-1]
+                p_justo = info.get('targetMeanPrice') or (info.get('forwardPE', 15) * info.get('forwardEps', 1))
+                margen = ((p_justo - p_act) / p_act) * 100
+                ebitda = info.get('ebitda', 0) or 0
+                est_m, est_r, est_t = "DESCUENTO" if margen > 15 else "CARO", "SOBREVENTA" if rsi_v < 35 else ("SOBRECOMPRA" if rsi_v > 65 else "NEUTRAL"), "ALCISTA" if p_act > sma_v else "BAJISTA"
+                
+                st.code(f"""
 🏢 {info.get('longName', ticker_final)}
 =================================================================
 PRECIO: ${p_act:.2f} | MARGEN: {margen:.1f}% ({est_m})
@@ -74,42 +75,38 @@ EBITDA: {ebitda:,} ({"✅ Sólido" if ebitda > 0 else "⚠️ RIESGO"})
 =================================================================
 """, language="text")
 
-# --- TAB 3: SENTIMIENTO DEL MERCADO ---
+# --- TAB 3: SENTIMIENTO (AJUSTE PARA MÓVIL) ---
 with tab3:
     st.subheader("Indicador de Pánico y Codicia")
     
-    # Usamos el RSI del S&P 500 como termómetro de sentimiento real
     spy = yf.Ticker("SPY")
     spy_h = spy.history(period="1y")
     spy_h['RSI'] = ta.rsi(spy_h['Close'], length=14)
-    sentimiento_val = spy_h['RSI'].iloc[-1]
+    val = spy_h['RSI'].iloc[-1]
     
-    # Clasificación
-    if sentimiento_val < 30: etiqueta, color = "PÁNICO EXTREMO", "red"
-    elif sentimiento_val < 45: etiqueta, color = "MIEDO", "orange"
-    elif sentimiento_val < 60: etiqueta, color = "NEUTRAL", "gray"
-    elif sentimiento_val < 75: etiqueta, color = "CODICIA", "lightgreen"
-    else: etiqueta, color = "EUFORIA EXTREMA", "green"
+    if val < 30: etiq, col = "PÁNICO EXTREMO", "red"
+    elif val < 45: etiq, col = "MIEDO", "orange"
+    elif val < 60: etiq, col = "NEUTRAL", "gray"
+    elif val < 75: etiq, col = "CODICIA", "lightgreen"
+    else: etiq, col = "EUFORIA EXTREMA", "green"
 
-    # Medidor Visual
+    # Medidor con fuente reducida para móvil
     fig_sent = go.Figure(go.Indicator(
         mode = "gauge+number",
-        value = sentimiento_val,
-        title = {'text': f"Estado: {etiqueta}"},
+        value = val,
+        number = {'font': {'size': 40}}, # Número más pequeño para que no se corte
+        title = {'text': f"Estado: {etiq}", 'font': {'size': 18}},
         gauge = {
             'axis': {'range': [0, 100]},
-            'bar': {'color': color},
+            'bar': {'color': col},
             'steps': [
                 {'range': [0, 30], 'color': "red"},
                 {'range': [30, 70], 'color': "gray"},
                 {'range': [70, 100], 'color': "green"}]
         }
     ))
-    fig_sent.update_layout(height=350, template="plotly_dark")
+    # Ajuste de márgenes para que quepa en el ancho del teléfono
+    fig_sent.update_layout(height=300, margin=dict(l=20, r=20, t=50, b=20), template="plotly_dark")
     st.plotly_chart(fig_sent, use_container_width=True)
     
-    st.info("""
-    💡 **¿Cómo leer esto?**
-    - **Pánico (Rojo):** El mercado está asustado. Son las mejores oportunidades de compra.
-    - **Euforia (Verde):** Todos están comprando. Es momento de ser cauteloso y no entrar tarde.
-    """)
+    st.info("💡 **Pánico (Rojo) = Oportunidad** | **Euforia (Verde) = Cautela**")
