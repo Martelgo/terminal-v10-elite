@@ -4,43 +4,59 @@ import yfinance as yf
 import pandas_ta as ta
 import plotly.graph_objects as go
 
-# -------------------------------
-# CONFIGURACIÓN
-# -------------------------------
+st.set_page_config(page_title="Terminal V10 Pro", layout="wide")
 
-st.set_page_config(
-    page_title="Terminal V10 Pro",
-    layout="wide"
-)
+st.title("🛰 Terminal V10 Pro")
 
-st.markdown("# 🛰 Terminal V10 Pro")
+# ===============================
+# FUNCION CAMBIO INDICES
+# ===============================
 
-# -------------------------------
-# FUNCIONES UNIVERSO DE MERCADO
-# -------------------------------
+def get_index_change(symbol):
+
+    try:
+        data = yf.Ticker(symbol).history(period="2d")
+
+        if len(data) < 2:
+            return 0
+
+        change = ((data["Close"].iloc[-1] - data["Close"].iloc[-2]) /
+                  data["Close"].iloc[-2]) * 100
+
+        return round(change, 2)
+
+    except:
+        return 0
+
+
+# ===============================
+# UNIVERSO DE ACCIONES
+# ===============================
 
 @st.cache_data
 def get_sp500():
 
-    url = "https://en.wikipedia.org/wiki/List_of_S%26P_500_companies"
+    try:
+        url = "https://en.wikipedia.org/wiki/List_of_S%26P_500_companies"
+        table = pd.read_html(url)
+        df = table[0]
+        return df["Symbol"].tolist()
 
-    table = pd.read_html(url)
-
-    df = table[0]
-
-    return df["Symbol"].tolist()
+    except:
+        return []
 
 
 @st.cache_data
 def get_nasdaq100():
 
-    url = "https://en.wikipedia.org/wiki/Nasdaq-100"
+    try:
+        url = "https://en.wikipedia.org/wiki/Nasdaq-100"
+        table = pd.read_html(url)
+        df = table[4]
+        return df["Ticker"].tolist()
 
-    table = pd.read_html(url)
-
-    df = table[4]
-
-    return df["Ticker"].tolist()
+    except:
+        return []
 
 
 def get_bmv():
@@ -59,17 +75,15 @@ def get_bmv():
 def universo_total():
 
     sp500 = get_sp500()
-
     nasdaq = get_nasdaq100()
-
     bmv = get_bmv()
 
     return list(set(sp500 + nasdaq + bmv))
 
 
-# -------------------------------
-# SCORE INTERPRETACIÓN
-# -------------------------------
+# ===============================
+# SCORE
+# ===============================
 
 def interpretar_score(score):
 
@@ -86,22 +100,14 @@ def interpretar_score(score):
         return "-"
 
 
-# -------------------------------
-# MOTOR DEL SCANNER
-# -------------------------------
+# ===============================
+# SCANNER
+# ===============================
 
 @st.cache_data(ttl=600)
 def scan_market():
 
     tickers = universo_total()
-
-    data = yf.download(
-        tickers,
-        period="5d",
-        interval="15m",
-        group_by="ticker",
-        threads=True
-    )
 
     resultados = []
 
@@ -109,13 +115,19 @@ def scan_market():
 
         try:
 
-            df = data[ticker].dropna()
+            df = yf.download(
+                ticker,
+                period="5d",
+                interval="15m",
+                progress=False
+            )
 
-            if len(df) < 60:
+            if df.empty or len(df) < 60:
                 continue
 
             df["EMA9"] = ta.ema(df["Close"], length=9)
             df["EMA50"] = ta.ema(df["Close"], length=50)
+
             df["ATR"] = ta.atr(df["High"], df["Low"], df["Close"])
 
             df["VolAvg"] = df["Volume"].rolling(20).mean()
@@ -131,25 +143,22 @@ def scan_market():
             setup = None
 
             if price > ema9 and ema9 > ema50:
-
                 score += 3
                 setup = "Reclaim EMA9"
 
-            if abs(price - ema50)/ema50 <= 0.01:
-
+            if abs(price - ema50) / ema50 <= 0.01:
                 score += 3
                 setup = "Pullback EMA50"
 
             if volume > volavg:
-
                 score += 1
 
             if price > df["Close"].iloc[-2]:
-
                 score += 1
 
-            if df["ATR"].iloc[-1] > df["ATR"].rolling(20).mean().iloc[-1] * 1.5:
+            atr_mean = df["ATR"].rolling(20).mean().iloc[-1]
 
+            if df["ATR"].iloc[-1] > atr_mean * 1.5:
                 score += 2
 
             if score >= 7:
@@ -159,7 +168,7 @@ def scan_market():
                     "Setup": setup,
                     "Score": score,
                     "Estado": interpretar_score(score),
-                    "Precio": round(price,2)
+                    "Precio": round(price, 2)
                 })
 
         except:
@@ -168,15 +177,14 @@ def scan_market():
     return pd.DataFrame(resultados)
 
 
-# -------------------------------
-# SIDEBAR NAVEGACIÓN
-# -------------------------------
+# ===============================
+# SIDEBAR
+# ===============================
 
 menu = st.sidebar.radio(
     "Navegación",
     [
         "Dashboard",
-        "Mercado",
         "Scanner",
         "Oportunidades",
         "Análisis",
@@ -184,9 +192,9 @@ menu = st.sidebar.radio(
     ]
 )
 
-# -------------------------------
+# ===============================
 # DASHBOARD
-# -------------------------------
+# ===============================
 
 if menu == "Dashboard":
 
@@ -194,26 +202,32 @@ if menu == "Dashboard":
 
     col1, col2, col3 = st.columns(3)
 
-    sp500 = yf.Ticker("^GSPC").history(period="1d")["Close"].pct_change().iloc[-1]*100
-    nasdaq = yf.Ticker("^IXIC").history(period="1d")["Close"].pct_change().iloc[-1]*100
-    vix = yf.Ticker("^VIX").history(period="1d")["Close"].pct_change().iloc[-1]*100
+    sp500 = get_index_change("^GSPC")
+    nasdaq = get_index_change("^IXIC")
+    vix = get_index_change("^VIX")
 
-    col1.metric("S&P500",f"{sp500:.2f}%")
-    col2.metric("NASDAQ",f"{nasdaq:.2f}%")
-    col3.metric("VIX",f"{vix:.2f}%")
+    col1.metric("S&P500", f"{sp500}%")
+    col2.metric("NASDAQ", f"{nasdaq}%")
+    col3.metric("VIX", f"{vix}%")
 
     st.subheader("🔥 Oportunidades del mercado")
 
     if st.button("Escanear mercado"):
 
-        df = scan_market()
+        with st.spinner("Escaneando mercado..."):
 
-        st.dataframe(df.sort_values("Score",ascending=False))
+            df = scan_market()
+
+        if not df.empty:
+            st.dataframe(df.sort_values("Score", ascending=False),
+                         use_container_width=True)
+        else:
+            st.warning("No se detectaron oportunidades")
 
 
-# -------------------------------
+# ===============================
 # SCANNER
-# -------------------------------
+# ===============================
 
 elif menu == "Scanner":
 
@@ -221,14 +235,25 @@ elif menu == "Scanner":
 
     if st.button("Ejecutar scanner"):
 
-        df = scan_market()
+        with st.spinner("Analizando mercado..."):
 
-        st.dataframe(df.sort_values("Score",ascending=False), use_container_width=True)
+            df = scan_market()
+
+        if not df.empty:
+
+            st.dataframe(
+                df.sort_values("Score", ascending=False),
+                use_container_width=True
+            )
+
+        else:
+
+            st.warning("No hay setups activos")
 
 
-# -------------------------------
+# ===============================
 # OPORTUNIDADES
-# -------------------------------
+# ===============================
 
 elif menu == "Oportunidades":
 
@@ -238,43 +263,62 @@ elif menu == "Oportunidades":
 
     if not df.empty:
 
-        st.dataframe(df.sort_values("Score",ascending=False), use_container_width=True)
+        st.dataframe(
+            df.sort_values("Score", ascending=False),
+            use_container_width=True
+        )
+
+    else:
+
+        st.info("No hay oportunidades activas")
 
 
-# -------------------------------
+# ===============================
 # ANALISIS
-# -------------------------------
+# ===============================
 
 elif menu == "Análisis":
 
-    ticker = st.text_input("Ticker","NVDA")
+    ticker = st.text_input("Ticker", "NVDA")
 
     data = yf.Ticker(ticker).history(period="1y")
 
-    data["EMA200"] = ta.ema(data["Close"], length=200)
+    if not data.empty:
 
-    fig = go.Figure()
+        data["EMA200"] = ta.ema(data["Close"], length=200)
 
-    fig.add_trace(go.Candlestick(
-        x=data.index,
-        open=data["Open"],
-        high=data["High"],
-        low=data["Low"],
-        close=data["Close"]
-    ))
+        fig = go.Figure()
 
-    fig.add_trace(go.Scatter(
-        x=data.index,
-        y=data["EMA200"],
-        name="EMA200"
-    ))
+        fig.add_trace(go.Candlestick(
+            x=data.index,
+            open=data["Open"],
+            high=data["High"],
+            low=data["Low"],
+            close=data["Close"],
+            name="Precio"
+        ))
 
-    st.plotly_chart(fig, use_container_width=True)
+        fig.add_trace(go.Scatter(
+            x=data.index,
+            y=data["EMA200"],
+            name="EMA200"
+        ))
+
+        fig.update_layout(
+            template="plotly_dark",
+            height=500
+        )
+
+        st.plotly_chart(fig, use_container_width=True)
+
+    else:
+
+        st.warning("No se pudieron descargar datos")
 
 
-# -------------------------------
+# ===============================
 # SENTIMIENTO
-# -------------------------------
+# ===============================
 
 elif menu == "Sentimiento":
 
@@ -285,23 +329,18 @@ elif menu == "Sentimiento":
     rsi = spy["RSI"].iloc[-1]
 
     if rsi < 30:
-
-        estado = "PÁNICO"
+        estado = "🔴 PÁNICO"
 
     elif rsi < 45:
-
-        estado = "MIEDO"
+        estado = "🟠 MIEDO"
 
     elif rsi < 60:
-
-        estado = "NEUTRAL"
+        estado = "⚪ NEUTRAL"
 
     elif rsi < 75:
-
-        estado = "CODICIA"
+        estado = "🟢 CODICIA"
 
     else:
-
-        estado = "EUFORIA"
+        estado = "🟢 EUFORIA"
 
     st.metric("Sentimiento mercado", estado)
