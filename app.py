@@ -1,152 +1,262 @@
-import streamlit as st
 import yfinance as yf
 import pandas as pd
-import pandas_ta as ta
-import plotly.graph_objects as go
+import numpy as np
+from datetime import datetime
 
-# Configuración visual de la App
-st.set_page_config(page_title="V10 Elite Terminal", layout="wide")
-st.title("🛰️ Terminal V10 Pro")
 
-# --- UNIVERSO DE VIGILANCIA (Puedes agregar más aquí) ---
-universo = {
-    "Tecnología EUA": ["MSFT", "AAPL", "NVDA", "GOOGL"],
-    "México (BMV)": ["WALMEX.MX", "AMX.MX", "GFNORTEO.MX", "FEMSAUBD.MX", "GMEXICOB.MX"],
-    "Chips": ["AMD", "TSM", "ASML", "AVGO"],
-    "Consumo": ["AMZN", "TSLA", "MELI", "NKE"]
-}
+# ==============================
+# UNIVERSO DE ACTIVOS
+# ==============================
 
-@st.cache_data(ttl=600)
-def cargar_radar():
-    datos = []
-    for sector, tickers in universo.items():
-        for t in tickers:
-            try:
-                s = yf.Ticker(t)
-                info = s.info
-                p = info.get('currentPrice') or info.get('regularMarketPrice', 0)
-                # Cálculo de Precio Justo (Target o Estimación V10)
-                tj = info.get('targetMeanPrice') or (info.get('forwardPE', 15) * info.get('forwardEps', 1))
-                ebitda = info.get('ebitda', 0) or 0
-                m = ((tj - p) / p) * 100 if p else 0
-                
-                # --- LÓGICA DE SEMÁFORO V10 ---
-                if m > 15 and ebitda > 0:
-                    estado = "🟢 COMPRA CLARA"
-                elif m > 5 and ebitda > 0:
-                    estado = "🟡 VIGILAR"
-                else:
-                    estado = "🔴 EVITAR / CARO"
-                
-                datos.append({
-                    "Ticker": t, 
-                    "Estado V10": estado,
-                    "Precio": round(p, 2), 
-                    "Margen %": round(m, 1),
-                    "Sector": sector
-                })
-            except: continue
-    return pd.DataFrame(datos)
+sp500_sample = [
+"AAPL","NVDA","MSFT","AMZN","META","AMD","AVGO","TSLA"
+]
 
-# --- NAVEGACIÓN ---
-tab1, tab2, tab3 = st.tabs(["🎯 RADAR SEMÁFORO", "🔍 AUDITORIA", "🌡️ SENTIMIENTO"])
+etfs = [
+"SPY","QQQ","SMH","SOXL","TQQQ","SPXL"
+]
 
-# --- TAB 1: RADAR (CON SEMÁFORO) ---
-with tab1:
-    st.subheader("Radar de Oportunidades")
-    with st.spinner('Escaneando mercado...'):
-        df_radar = cargar_radar()
-    
-    if not df_radar.empty:
-        for sector in universo.keys():
-            st.write(f"### {sector}")
-            sector_df = df_radar[df_radar['Sector'] == sector].drop(columns=['Sector'])
-            st.dataframe(sector_df, use_container_width=True)
-    st.caption("🟢 Margen > 15% + EBITDA Sólido | 🟡 Margen 5-15% | 🔴 Caro o Riesgo")
+mexico = [
+"AMXL.MX","WALMEX.MX","GMEXICOB.MX"
+]
 
-# --- TAB 2: AUDITORIA (CONSOLA ORIGINAL IMAGEN 2) ---
-with tab2:
-    st.subheader("Análisis 360 de Activo")
-    c_i1, c_i2 = st.columns([1, 2])
-    with c_i1: mkt = st.radio("Mercado:", ["EUA", "México (.MX)"])
-    with c_i2: tk_in = st.text_input("Ticker:", "MSFT").upper()
+universe = sp500_sample + etfs + mexico
 
-    ticker_final = tk_in if mkt == "EUA" else (f"{tk_in}.MX" if ".MX" not in tk_in else tk_in)
 
-    if ticker_final:
-        with st.spinner('Auditando...'):
-            acc = yf.Ticker(ticker_final)
-            h = acc.history(period="1y")
-            info = acc.info
-            if not h.empty:
-                # Cálculos Técnicos
-                h['RSI'] = ta.rsi(h['Close'], length=14)
-                h['SMA200'] = ta.sma(h['Close'], length=200)
-                p_act = h['Close'].iloc[-1]
-                rsi_v = h['RSI'].iloc[-1] if not pd.isna(h['RSI'].iloc[-1]) else 50
-                sma_v = h['SMA200'].iloc[-1] if not pd.isna(h['SMA200'].iloc[-1]) else p_act
-                
-                # Cálculos Fundamentales
-                p_justo = info.get('targetMeanPrice') or (info.get('forwardPE', 15) * info.get('forwardEps', 1))
-                margen = ((p_justo - p_act) / p_act) * 100
-                ebitda = info.get('ebitda', 0) or 0
-                
-                # Estados
-                est_m = "DESCUENTO" if margen > 15 else "CARO"
-                est_r = "SOBREVENTA" if rsi_v < 35 else ("SOBRECOMPRA" if rsi_v > 65 else "NEUTRAL")
-                est_t = "ALCISTA" if p_act > sma_v else "BAJISTA"
-                est_e = "Sólido" if ebitda > 0 else "RIESGO"
+# ==============================
+# INDICADORES
+# ==============================
 
-                st.markdown(f"### 🏢 {info.get('longName', ticker_final)}")
-                st.markdown(f"**📡 ESTRATEGIA: {'REBOTE' if rsi_v < 40 else 'CONTINUACION'} (Acción en {est_m.lower()})**")
-                
-                # Consola formateada estilo Imagen 2
-                reporte_v2 = f"""
-=================================================================
-                  MÉTRICA           VALOR       ESTADO
------------------------------------------------------------------
-            Precio Actual         ${p_act:>8.2f}    Cotizando
-Precio Justo de la Acción         ${p_justo:>8.2f}   Referencia
-              Margen Seg.           {margen:>7.1f}%       {"✅" if est_m=="DESCUENTO" else "❌"} {est_m}
-                RSI (14d)            {rsi_v:>7.1f}  {"📉" if rsi_v<35 else "⚖️"} {est_r}
-                  SMA 200         ${sma_v:>8.2f}   {"🚀" if est_t=="ALCISTA" else "⚠️"} {est_t}
-                   EBITDA          {ebitda:>14,}       {"✅" if ebitda > 0 else "⚠️"} {est_e}
------------------------------------------------------------------
-📍 NIVELES DE COMPRA:  1: ${p_act*0.96:.2f} | 2: ${p_act*0.92:.2f} | 3: ${p_act*0.88:.2f}
-=================================================================
-"""
-                st.code(reporte_v2, language="text")
+def add_indicators(df):
 
-                # Gráfico de Velas
-                fig = go.Figure(data=[go.Candlestick(x=h.index, open=h['Open'], high=h['High'], low=h['Low'], close=h['Close'], name="Precio")])
-                fig.add_trace(go.Scatter(x=h.index, y=h['SMA200'], line=dict(color='orange', width=2), name="SMA 200"))
-                fig.update_layout(template="plotly_dark", height=400, xaxis_rangeslider_visible=False, margin=dict(l=10, r=10, t=10, b=10))
-                st.plotly_chart(fig, use_container_width=True)
+    df["EMA9"] = df["Close"].ewm(span=9).mean()
+    df["EMA50"] = df["Close"].ewm(span=50).mean()
+    df["EMA200"] = df["Close"].ewm(span=200).mean()
 
-# --- TAB 3: SENTIMIENTO (OPTIMIZADO IPHONE) ---
-with tab3:
-    st.subheader("Indicador de Pánico y Codicia")
-    spy = yf.Ticker("SPY")
-    spy_h = spy.history(period="1y")
-    spy_h['RSI'] = ta.rsi(spy_h['Close'], length=14)
-    val = spy_h['RSI'].iloc[-1]
-    
-    if val < 30: etiq, col = "PÁNICO EXTREMO", "red"
-    elif val < 45: etiq, col = "MIEDO", "orange"
-    elif val < 60: etiq, col = "NEUTRAL", "gray"
-    elif val < 75: etiq, col = "CODICIA", "lightgreen"
-    else: etiq, col = "EUFORIA EXTREMA", "green"
+    df["vol_avg"] = df["Volume"].rolling(20).mean()
 
-    fig_sent = go.Figure(go.Indicator(
-        mode = "gauge+number", value = val,
-        number = {'font': {'size': 40}},
-        title = {'text': f"Estado: {etiq}", 'font': {'size': 18}},
-        gauge = {'axis': {'range': [0, 100]}, 'bar': {'color': col},
-                 'steps': [{'range': [0, 30], 'color': "red"}, 
-                           {'range': [30, 70], 'color': "gray"}, 
-                           {'range': [70, 100], 'color': "green"}]}
-    ))
-    fig_sent.update_layout(height=300, margin=dict(l=20, r=20, t=50, b=20), template="plotly_dark")
-    st.plotly_chart(fig_sent, use_container_width=True)
-    st.info("💡 Pánico (Rojo) = Oportunidad | Euforia (Verde) = Cautela")
+    df["range"] = df["High"] - df["Low"]
+    df["atr"] = df["range"].rolling(14).mean()
 
+    df["mean"] = df["Close"].rolling(30).mean()
+    df["std"] = df["Close"].rolling(30).std()
+
+    df["zscore"] = (df["Close"] - df["mean"]) / df["std"]
+
+    return df
+
+
+# ==============================
+# FILTRO DE LIQUIDEZ
+# ==============================
+
+def liquidity_filter(df):
+
+    df["dollar_volume"] = df["Close"] * df["Volume"]
+
+    dv = df["dollar_volume"].rolling(20).mean().iloc[-1]
+
+    return dv >= 20_000_000
+
+
+# ==============================
+# CAPITULACION
+# ==============================
+
+def detect_capitulation(df):
+
+    last = df.iloc[-1]
+
+    rvol = last["Volume"] / last["vol_avg"]
+
+    atr_expansion = last["atr"] > df["atr"].rolling(30).mean().iloc[-1] * 1.5
+
+    z_cond = last["zscore"] < -2
+
+    if rvol > 2 and atr_expansion and z_cond:
+        return True
+
+    return False
+
+
+# ==============================
+# ABSORCION
+# ==============================
+
+def detect_absorption(df):
+
+    recent = df.tail(10)
+
+    low_dump = df["Low"].iloc[-11]
+
+    no_new_lows = recent["Low"].min() > low_dump
+
+    range_size = (recent["High"].max() - recent["Low"].min()) / recent["Close"].iloc[-1]
+
+    tight_range = range_size < 0.03
+
+    volume_decline = recent["Volume"].mean() < df["Volume"].iloc[-11]
+
+    if no_new_lows and tight_range and volume_decline:
+        return True
+
+    return False
+
+
+# ==============================
+# RECLAIM EMA
+# ==============================
+
+def reclaim_ema9(df):
+
+    last = df.iloc[-1]
+    prev = df.iloc[-2]
+
+    return last["Close"] > last["EMA9"] and prev["Close"] < prev["EMA9"]
+
+
+# ==============================
+# RUPTURA ESTRUCTURA
+# ==============================
+
+def break_structure(df):
+
+    recent_high = df["High"].tail(6).max()
+
+    return df["Close"].iloc[-1] > recent_high
+
+
+# ==============================
+# SCORE
+# ==============================
+
+def compute_score(features):
+
+    score = 0
+
+    if features["trend"]:
+        score += 2
+
+    if features["correction"]:
+        score += 1.5
+
+    if features["capitulation"]:
+        score += 3
+
+    if features["absorption"]:
+        score += 2
+
+    if features["reclaim"]:
+        score += 1
+
+    if features["structure"]:
+        score += 0.5
+
+    return round(score,2)
+
+
+# ==============================
+# ANALISIS DE ACTIVO
+# ==============================
+
+def analyze_ticker(ticker):
+
+    try:
+
+        df15 = yf.download(ticker, interval="15m", period="5d", progress=False)
+        df1d = yf.download(ticker, interval="1d", period="6mo", progress=False)
+
+        df15 = add_indicators(df15)
+        df1d = add_indicators(df1d)
+
+        if not liquidity_filter(df1d):
+            return None
+
+        trend = df1d["Close"].iloc[-1] > df1d["EMA200"].iloc[-1]
+
+        correction = (df15["Close"].max() - df15["Close"].iloc[-1]) / df15["Close"].max() > 0.08
+
+        capitulation = detect_capitulation(df15)
+
+        absorption = detect_absorption(df15)
+
+        reclaim = reclaim_ema9(df15)
+
+        structure = break_structure(df15)
+
+        features = {
+            "trend":trend,
+            "correction":correction,
+            "capitulation":capitulation,
+            "absorption":absorption,
+            "reclaim":reclaim,
+            "structure":structure
+        }
+
+        score = compute_score(features)
+
+        if score < 7:
+            return None
+
+        if score >= 9:
+            state = "COMPRA CLARA"
+
+        elif score >= 8:
+            state = "PREPARAR COMPRA"
+
+        else:
+            state = "OBSERVAR"
+
+        return {
+            "ticker":ticker,
+            "score":score,
+            "estado":state
+        }
+
+    except:
+
+        return None
+
+
+# ==============================
+# SCANNER
+# ==============================
+
+def run_scanner():
+
+    results = []
+
+    print("Escaneando mercado...")
+
+    for ticker in universe:
+
+        res = analyze_ticker(ticker)
+
+        if res:
+            results.append(res)
+
+    df = pd.DataFrame(results)
+
+    if not df.empty:
+        df = df.sort_values(by="score", ascending=False)
+
+    return df
+
+
+# ==============================
+# MAIN
+# ==============================
+
+if __name__ == "__main__":
+
+    results = run_scanner()
+
+    print("\nRESULTADOS\n")
+
+    if results.empty:
+
+        print("No hay setups detectados")
+
+    else:
+
+        print(results)
