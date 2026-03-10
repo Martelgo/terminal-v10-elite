@@ -6,7 +6,7 @@ import plotly.graph_objects as go
 
 # Configuración visual de la App
 st.set_page_config(page_title="V10 Elite Terminal", layout="wide")
-st.title("🛰️ Terminal V10 Pro")
+st.title("🛰️ Terminal V10 Pro by marto")
 
 # --- UNIVERSO DE VIGILANCIA (Puedes agregar más aquí) ---
 universo = {
