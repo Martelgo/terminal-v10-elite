@@ -93,13 +93,3 @@ with tab2:
                 fig = go.Figure(data=[go.Candlestick(x=h.index, open=h['Open'], high=h['High'], low=h['Low'], close=h['Close'])])
                 fig.update_layout(template="plotly_dark", height=400, xaxis_rangeslider_visible=False)
                 st.plotly_chart(fig, use_container_width=True)
-
-# --- TAB 3: SENTIMIENTO ---
-with tab3:
-    st.subheader("Sentimiento del Mercado")
-    if st.button("🌡️ REFRESCAR SENTIMIENTO"):
-        spy = yf.Ticker("SPY")
-        spy_h = spy.history(period="1y")
-        val = ta.rsi(spy_h['Close'], length=14).iloc[-1]
-        st.metric("RSI Mercado (SPY)", f"{val:.2f}")
-        st.info("Pánico < 30 | Neutral 50 | Euforia > 70")
